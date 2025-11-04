@@ -1,0 +1,48 @@
+# Ignore Git and CI/CD
+.git
+.gitignore
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment & local configs
+.env
+*.env
+*.local
+
+# Dependency caches
+vendor/
+node_modules/
+tmp/
+cache/
+dist/
+build/
+bin/
+coverage/
+*.out
+*.log
+
+# OS & editor junk
+.DS_Store
+Thumbs.db
+
+# Docker and Compose files (not needed in image)
+docker-compose.yml
+Dockerfile*
+Makefile
+
+# Go build artifacts
+*.exe
+*.test
+*.prof
+*.modcache
+*.a
+
+# Test / mock / docs / samples
+test/
+tests/
+examples/
+docs/
+README.md
