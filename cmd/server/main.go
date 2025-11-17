@@ -17,11 +17,11 @@ func main() {
 	addr := env("GRPC_ADDR", ":50051")
 
 	// Adapters (infrastructure)
-	ocrAdapter := ocr.NewTyphoonOCR()        // TODO: swap with real OCR later
-	parserAdapter := parser.NewRulesParser() // lightweight rules-based parser
+	ocrCli := ocr.NewTyphoonOCR()
+	parserAdapter := parser.NewRulesParser()
 
 	// Application service (use cases)
-	aiSvc := usecase.NewAIService(ocrAdapter, parserAdapter)
+	aiSvc := usecase.NewAIService(ocrCli, parserAdapter)
 
 	// gRPC server (interface adapter)
 	s := grpcserver.New(addr)
