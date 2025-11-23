@@ -13,11 +13,11 @@ import (
 type AIService struct {
 	aiwpb.UnimplementedAiWrapperServiceServer // satisfies gRPC interface
 	ocr                                       ports.OCRPort
-	parser                                    ports.ParserPort
+	ollama                                    ports.OllamaPort
 }
 
-func NewAIService(ocr ports.OCRPort, parser ports.ParserPort) *AIService {
-	return &AIService{ocr: ocr, parser: parser}
+func NewAIService(ocr ports.OCRPort, ollama ports.OllamaPort) *AIService {
+	return &AIService{ocr: ocr, ollama: ollama}
 }
 
 // ===== gRPC Methods =====
@@ -53,7 +53,10 @@ func (s *AIService) BuildTransactionFromText(ctx context.Context, req *aiwpb.Bui
 		return nil, invalidArg("text_to_analyze is empty")
 	}
 	//to be change to call ollama instead of parser
-	tr := s.parser.Parse(text, req.GetCategories())
+	tr, err := s.ollama.ParseOcrResponseToJson(text, req.GetCategories())
+	if err != nil {
+		return nil, invalidArg("failed to parse text: " + err.Error())
+	}
 	return toPB(tr), nil
 }
 
@@ -68,13 +71,16 @@ func (s *AIService) BuildTransactionFromImage(ctx context.Context, req *aiwpb.Bu
 	}
 	txt = strings.TrimSpace(txt)
 	//to be change to call ollama instead of parser
-	tr := s.parser.Parse(txt, req.GetCategories())
+	tr, err := s.ollama.ParseOcrResponseToJson(txt, req.GetCategories())
+	if err != nil {
+		return nil, invalidArg("failed to parse text: " + err.Error())
+	}
 	return toPB(tr), nil
 }
 
 // ===== helpers =====
 
-func toPB(t domain.Transaction) *aiwpb.TransactionResponse {
+func toPB(t *domain.Transaction) *aiwpb.TransactionResponse {
 	return &aiwpb.TransactionResponse{
 		Title:    t.Title,
 		Price:    t.Price,
@@ -83,7 +89,6 @@ func toPB(t domain.Transaction) *aiwpb.TransactionResponse {
 		Category: t.Category,
 	}
 }
-
 
 func invalidArg(msg string) error {
 	// gRPC status code 3 (InvalidArgument)
