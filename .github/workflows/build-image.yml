@@ -2,7 +2,7 @@ name: Build & Push Docker image
 
 on:
   push:
-    branches: ['main','develop']
+    branches: ["main", "develop"]
 
 permissions:
   contents: read
@@ -22,6 +22,7 @@ jobs:
         run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> $GITHUB_ENV
 
       - name: Set up QEMU (emulation for cross-arch builds)
+        if: github.ref_name == 'develop'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -34,21 +35,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine tag (latest for main, dev for others)
+      # Determine tag and multi-platform flag based on branch
+      - name: Determine tag and platforms
         run: |
           if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            # Main branch: Use 'latest' tag, only build host architecture (linux/amd64)
             echo "TAG=latest" >> $GITHUB_ENV
+            echo "PLATFORMS=linux/amd64" >> $GITHUB_ENV
           else
+            # Develop branch: Use 'dev' tag, build multi-architecture (linux/amd64, linux/arm64)
             echo "TAG=dev" >> $GITHUB_ENV
+            echo "PLATFORMS=linux/amd64,linux/arm64" >> $GITHUB_ENV
           fi
           echo "SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)" >> $GITHUB_ENV
 
-      - name: Build and push (multi-arch)
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          # Use the PLATFORMS variable set in the previous step
+          platforms: ${{ env.PLATFORMS }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ env.TAG }}
             ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}

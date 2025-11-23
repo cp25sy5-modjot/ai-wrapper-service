@@ -8,7 +8,7 @@ import (
 
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/adapters/grpc"
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/adapters/ocr"
-	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/adapters/parser"
+	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/adapters/ollama"
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/pkg/grpcserver"
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/usecase"
 )
@@ -18,10 +18,10 @@ func main() {
 
 	// Adapters (infrastructure)
 	ocrCli := ocr.NewTyphoonOCR()
-	parserAdapter := parser.NewRulesParser()
+	ollamaAdapter := ollama.NewOllamaAdapter()
 
 	// Application service (use cases)
-	aiSvc := usecase.NewAIService(ocrCli, parserAdapter)
+	aiSvc := usecase.NewAIService(ocrCli, ollamaAdapter)
 
 	// gRPC server (interface adapter)
 	s := grpcserver.New(addr)
