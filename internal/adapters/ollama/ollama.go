@@ -60,8 +60,9 @@ func (o *OllamaAdapter) sendRequest(payload AIRequest) ([]byte, error) {
 	}
 
 	// 3. Send the HTTP POST request to the Docker container
+	url := fmt.Sprintf("%s%s", o.baseURL, "/api/generate")
 	raw, err := http.Post(
-		o.baseURL,
+		url,
 		"application/json",
 		bytes.NewBuffer(jsonPayload),
 	)
