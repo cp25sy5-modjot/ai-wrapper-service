@@ -23,7 +23,7 @@ func NewOllamaAdapter() *OllamaAdapter {
 	if hostIp == "" {
 		log.Fatal("missing HOST_IP")
 	}
-	baseURL := fmt.Sprintf("http://%s:11434%s", hostIp, "/api/generate")
+	baseURL := fmt.Sprintf("http://%s:11434", hostIp)
 
 	return &OllamaAdapter{
 		baseURL:   baseURL,
