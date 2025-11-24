@@ -50,6 +50,7 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string,
     if err != nil {
         return nil, err
     }
+	log.Printf("Ollama API response received: %v", raw.Body)
     
     defer raw.Body.Close() 
 
@@ -66,7 +67,6 @@ func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
     url := fmt.Sprintf("%s%s", o.baseURL, "/api/generate")
     ollamaTimeout := 5 * time.Minute
     
-    // Using context.Background() is correct here to prevent gRPC context cancellation from interfering
     ollamaCtx, ollamaCancel := context.WithTimeout(context.Background(), ollamaTimeout)
     defer ollamaCancel()
 
