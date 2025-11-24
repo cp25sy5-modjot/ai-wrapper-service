@@ -18,12 +18,14 @@ type OllamaAdapter struct {
 }
 
 func NewOllamaAdapter() *OllamaAdapter {
-	ollamaURL := os.Getenv("OLLAMA_API_URL")
-	if ollamaURL == "" {
-		log.Fatal("missing OLLAMA_API_URL")
+	hostIp := os.Getenv("HOST_IP")
+	if hostIp == "" {
+		log.Fatal("missing HOST_IP")
 	}
+	baseURL := fmt.Sprintf("http://%s:11434%s", hostIp, "/api/generate")
+
 	return &OllamaAdapter{
-		baseURL:   ollamaURL,
+		baseURL:   baseURL,
 		modelName: "modjot-ai",
 	}
 }
@@ -34,6 +36,7 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(text string, categories []string)
 		Model:  o.modelName,
 		Prompt: buildedPrompt,
 		Stream: false,
+		Format: "json",
 	}
 	raw, err := o.sendRequest(payload)
 	if err != nil {
