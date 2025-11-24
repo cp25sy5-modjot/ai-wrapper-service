@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/domain"
 )
@@ -44,14 +45,14 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string,
 		Stream: true,
 		Format: "json",
 	}
-	raw, err := o.sendRequest(ctx, payload)
+	raw, err := o.sendRequest(payload)
 	if err != nil {
 		return nil, err
 	}
 	return streamOllamaResponse(raw)
 }
 
-func (o *OllamaAdapter) sendRequest(ctx context.Context, payload AIRequest) (*http.Response, error) {
+func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -59,8 +60,11 @@ func (o *OllamaAdapter) sendRequest(ctx context.Context, payload AIRequest) (*ht
 	}
 
 	url := fmt.Sprintf("%s%s", o.baseURL, "/api/generate")
+	ollamaTimeout := 5 * time.Minute
+	ollamaCtx, ollamaCancel := context.WithTimeout(context.Background(), ollamaTimeout)
+	defer ollamaCancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequestWithContext(ollamaCtx, "POST", url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +91,6 @@ func buildPrompt(text string, categories []string) string {
 }
 
 func streamOllamaResponse(resp *http.Response) (*domain.Transaction, error) {
-	defer resp.Body.Close() // Ensure the body is closed when done
-
 	reader := bufio.NewReader(resp.Body)
 	var fullResponseText string
 
