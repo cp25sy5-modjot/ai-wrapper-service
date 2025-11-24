@@ -53,7 +53,7 @@ func (s *AIService) BuildTransactionFromText(ctx context.Context, req *aiwpb.Bui
 		return nil, invalidArg("text_to_analyze is empty")
 	}
 	//to be change to call ollama instead of parser
-	tr, err := s.ollama.ParseOcrResponseToJson(text, req.GetCategories())
+	tr, err := s.ollama.ParseOcrResponseToJson(ctx, text, req.GetCategories())
 	if err != nil {
 		return nil, invalidArg("failed to parse text: " + err.Error())
 	}
@@ -71,7 +71,7 @@ func (s *AIService) BuildTransactionFromImage(ctx context.Context, req *aiwpb.Bu
 	}
 	txt = strings.TrimSpace(txt)
 	//to be change to call ollama instead of parser
-	tr, err := s.ollama.ParseOcrResponseToJson(txt, req.GetCategories())
+	tr, err := s.ollama.ParseOcrResponseToJson(ctx, txt, req.GetCategories())
 	if err != nil {
 		return nil, invalidArg("failed to parse text: " + err.Error())
 	}

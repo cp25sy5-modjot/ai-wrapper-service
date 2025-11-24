@@ -3,6 +3,7 @@ package ollama
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,8 +15,9 @@ import (
 )
 
 type OllamaAdapter struct {
-	baseURL   string
-	modelName string
+	baseURL    string
+	modelName  string
+	httpClient *http.Client
 }
 
 func NewOllamaAdapter() *OllamaAdapter {
@@ -26,12 +28,13 @@ func NewOllamaAdapter() *OllamaAdapter {
 	baseURL := fmt.Sprintf("http://%s:11434", hostIp)
 
 	return &OllamaAdapter{
-		baseURL:   baseURL,
-		modelName: "modjot-ai",
+		baseURL:    baseURL,
+		modelName:  "modjot-ai",
+		httpClient: &http.Client{},
 	}
 }
 
-func (o *OllamaAdapter) ParseOcrResponseToJson(text string, categories []string) (*domain.Transaction, error) {
+func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string, categories []string) (*domain.Transaction, error) {
 	buildedPrompt := buildPrompt(text, categories)
 	payload := AIRequest{
 		Model:  o.modelName,
@@ -39,37 +42,29 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(text string, categories []string)
 		Stream: false,
 		Format: "json",
 	}
-	raw, err := o.sendRequest(payload)
+	raw, err := o.sendRequest(ctx, payload)
 	if err != nil {
 		return nil, err
 	}
 	return streamOllamaResponse(raw)
 }
 
-func parseResponseToJSON(resp *http.Response) (*domain.Transaction, error) {
-	var result domain.Transaction
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal OCR response: %w", err)
-	}
-
-	log.Printf("OCR extracted text: %v", resp)
-	return &result, nil
-}
-
-func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
+func (o *OllamaAdapter) sendRequest(ctx context.Context, payload AIRequest) (*http.Response, error) {
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
 		return nil, fmt.Errorf("internal error")
 	}
 
-	// 3. Send the HTTP POST request to the Docker container
 	url := fmt.Sprintf("%s%s", o.baseURL, "/api/generate")
-	raw, err := http.Post(
-		url,
-		"application/json",
-		bytes.NewBuffer(jsonPayload),
-	)
+	
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	raw, err := o.httpClient.Do(req)
 	if err != nil {
 		log.Println("Error connecting to Ollama API:", err)
 		return nil, fmt.Errorf("ollama API connection error")
