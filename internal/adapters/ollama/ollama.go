@@ -38,51 +38,58 @@ func NewOllamaAdapter() *OllamaAdapter {
 }
 
 func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string, categories []string) (*domain.Transaction, error) {
-	buildedPrompt := buildPrompt(text, categories)
-	payload := AIRequest{
-		Model:  o.modelName,
-		Prompt: buildedPrompt,
-		Stream: true,
-		Format: "json",
-	}
-	raw, err := o.sendRequest(payload)
-	if err != nil {
-		return nil, err
-	}
-	return streamOllamaResponse(raw)
+    buildedPrompt := buildPrompt(text, categories)
+    log.Printf("Ollama Prompt: %s", buildedPrompt)
+    payload := AIRequest{
+        Model:  o.modelName,
+        Prompt: buildedPrompt,
+        Stream: true,
+        Format: "json",
+    }
+    raw, err := o.sendRequest(payload)
+    if err != nil {
+        return nil, err
+    }
+    
+    defer raw.Body.Close() 
+
+    return streamOllamaResponse(raw)
 }
 
 func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		log.Println("Error marshalling JSON:", err)
-		return nil, fmt.Errorf("internal error")
-	}
+    jsonPayload, err := json.Marshal(payload)
+    if err != nil {
+        log.Println("Error marshalling JSON:", err)
+        return nil, fmt.Errorf("internal error")
+    }
 
-	url := fmt.Sprintf("%s%s", o.baseURL, "/api/generate")
-	ollamaTimeout := 5 * time.Minute
-	ollamaCtx, ollamaCancel := context.WithTimeout(context.Background(), ollamaTimeout)
-	defer ollamaCancel()
+    url := fmt.Sprintf("%s%s", o.baseURL, "/api/generate")
+    ollamaTimeout := 5 * time.Minute
+    
+    // Using context.Background() is correct here to prevent gRPC context cancellation from interfering
+    ollamaCtx, ollamaCancel := context.WithTimeout(context.Background(), ollamaTimeout)
+    defer ollamaCancel()
 
-	req, err := http.NewRequestWithContext(ollamaCtx, "POST", url, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
+    req, err := http.NewRequestWithContext(ollamaCtx, "POST", url, bytes.NewBuffer(jsonPayload))
+    if err != nil {
+        return nil, err
+    }
+    req.Header.Set("Content-Type", "application/json")
 
-	raw, err := o.httpClient.Do(req)
-	if err != nil {
-		log.Println("Error connecting to Ollama API:", err)
-		return nil, fmt.Errorf("ollama API connection error")
-	}
-	defer raw.Body.Close()
+    raw, err := o.httpClient.Do(req)
+    if err != nil {
+        log.Println("Error connecting to Ollama API:", err)
+        return nil, fmt.Errorf("ollama API connection error")
+    }
 
-	if raw.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(raw.Body)
-		return nil, fmt.Errorf("ollama API error: %d - %s", raw.StatusCode, string(body))
-	}
+    if raw.StatusCode != http.StatusOK {
+        // IMPORTANT: If status is not 200, we MUST close the body here.
+        defer raw.Body.Close() 
+        body, _ := io.ReadAll(raw.Body)
+        return nil, fmt.Errorf("ollama API error: %d - %s", raw.StatusCode, string(body))
+    }
 
-	return raw, nil
+    return raw, nil
 }
 
 func buildPrompt(text string, categories []string) string {
