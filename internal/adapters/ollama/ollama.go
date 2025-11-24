@@ -1,6 +1,7 @@
 package ollama
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -42,20 +43,20 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(text string, categories []string)
 	if err != nil {
 		return nil, err
 	}
-	return parseResponseToJSON(raw)
+	return streamOllamaResponse(raw)
 }
 
-func parseResponseToJSON(data []byte) (*domain.Transaction, error) {
-	var resp domain.Transaction
-	if err := json.Unmarshal(data, &resp); err != nil {
+func parseResponseToJSON(resp *http.Response) (*domain.Transaction, error) {
+	var result domain.Transaction
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal OCR response: %w", err)
 	}
 
 	log.Printf("OCR extracted text: %v", resp)
-	return &resp, nil
+	return &result, nil
 }
 
-func (o *OllamaAdapter) sendRequest(payload AIRequest) ([]byte, error) {
+func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		log.Println("Error marshalling JSON:", err)
@@ -80,10 +81,64 @@ func (o *OllamaAdapter) sendRequest(payload AIRequest) ([]byte, error) {
 		return nil, fmt.Errorf("ollama API error: %d - %s", raw.StatusCode, string(body))
 	}
 
-	return io.ReadAll(raw.Body)
+	return raw, nil
 }
 
 func buildPrompt(text string, categories []string) string {
 	prompt := fmt.Sprintf("Categories Available: %v\nOCR Text:\n%s", categories, text)
 	return prompt
+}
+
+func streamOllamaResponse(resp *http.Response) (*domain.Transaction, error) {
+	reader := bufio.NewReader(resp.Body)
+	var fullResponseText string
+
+	fmt.Println("--- Streaming Response Start ---")
+
+	for {
+		// Read a line from the stream
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			// If it's EOF, we're done with the entire stream
+			break
+		}
+
+		// Ollama chunks are a single JSON object per line (or chunk)
+		if len(line) > 0 {
+			var chunk OllamaChunk
+
+			// Unmarshal the chunk into our struct
+			if err := json.Unmarshal(line, &chunk); err != nil {
+				// Handle potential parsing errors or empty lines
+				continue
+			}
+
+			// Concatenate the response text
+			fullResponseText += chunk.Response
+
+			// Print token for streaming visualization
+			fmt.Print(chunk.Response)
+
+			// Check for the 'done' signal to break the loop
+			if chunk.Done {
+				break
+			}
+		}
+	}
+
+	fmt.Println("\n--- Streaming Response End ---")
+
+	// 5. Final processing: Parse the concatenated JSON string
+	var finalJSON domain.Transaction
+	if err := json.Unmarshal([]byte(fullResponseText), &finalJSON); err != nil {
+		fmt.Printf("\nError parsing final JSON: %v\n", err)
+		// Print the raw text for debugging if parsing fails
+		fmt.Printf("Raw text: %s\n", fullResponseText)
+		return nil, err
+	}
+
+	// Output the final, correctly parsed JSON object
+	fmt.Println("\n✅ Successfully Parsed Final JSON Object:")
+
+	return &finalJSON, nil
 }
