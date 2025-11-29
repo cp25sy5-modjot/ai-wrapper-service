@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/domain"
+	"github.com/rs/zerolog"
 )
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
 type OllamaAdapter struct {
 	baseURL    string
@@ -95,32 +97,35 @@ func buildPrompt(text string, categories []string) string {
 }
 
 func streamOllamaResponse(resp *http.Response) (*domain.Transaction, error) {
-	body, _ := io.ReadAll(resp.Body)
-	var fullResponseText string
+	decoder := json.NewDecoder(resp.Body)
+	var fullText string
 
-	var chunk OllamaChunk
+	for decoder.More() {
+		var chunk OllamaChunk
 
-	// 3. Unmarshal the chunk. Critical: Do not skip unmarshal errors silently.
-	if err := json.Unmarshal([]byte(body), &chunk); err != nil {
-		// Log the raw line for debugging. This line might be an unhandled error message.
-		fmt.Printf("\n❌ WARNING: Failed to unmarshal JSON chunk. Raw line: [%s], Error: %v\n", body, err)
-		// If it's not JSON, assume it's a critical error message and stop.
-		return nil, fmt.Errorf("invalid JSON or unexpected message received in stream: %s", body)
+		if err := decoder.Decode(&chunk); err != nil {
+			logger.Error().Err(err).Msg("error decoding ollama stream chunk")
+			break
+		}
+
+		fullText += chunk.Response
+		// (optional) log each chunk:
+		logger.Debug().Str("chunk", chunk.Response).Msg("ollama chunk")
 	}
 
-	// Concatenate the response text
-	fullResponseText += chunk.Response
-	fmt.Print("response chunk: " + fullResponseText)
+	logger.Info().
+		Str("full_response", fullText).
+		Msg("ollama streamed response")
 
-	if fullResponseText == "" {
+	if fullText == "" {
 		return nil, errors.New("stream closed without receiving any response content")
 	}
 
 	// 4. Final processing: Parse the concatenated JSON string
 	var finalJSON domain.Transaction
-	if err := json.Unmarshal([]byte(fullResponseText), &finalJSON); err != nil {
+	if err := json.Unmarshal([]byte(fullText), &finalJSON); err != nil {
 		fmt.Printf("\nError parsing final JSON structure: %v\n", err)
-		fmt.Printf("Raw text received: %s\n", fullResponseText)
+		fmt.Printf("Raw text received: %s\n", fullText)
 		return nil, err
 	}
 
