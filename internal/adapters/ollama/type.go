@@ -6,9 +6,3 @@ type AIRequest struct {
 	Stream bool   `json:"stream"`
 	Format string `json:"format"`
 }
-
-type OllamaChunk struct {
-	Model    string `json:"model"`
-	Response string `json:"response"`
-	Done     bool   `json:"done"`
-}

@@ -10,11 +10,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/domain"
 	"github.com/rs/zerolog"
 )
+
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
 type OllamaAdapter struct {
@@ -36,40 +39,43 @@ func NewOllamaAdapter() *OllamaAdapter {
 		httpClient: &http.Client{},
 	}
 }
-
 func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string, categories []string) (*domain.Transaction, error) {
-	buildedPrompt := buildPrompt(text, categories)
-	log.Printf("Ollama Prompt: %s", buildedPrompt)
+	cleanOcr := CleanOCR(text)
+	prompt := buildPrompt(cleanOcr, categories)
+	log.Printf("Ollama Prompt: %s", prompt)
+
 	payload := AIRequest{
 		Model:  o.modelName,
-		Prompt: buildedPrompt,
+		Prompt: prompt,
 		Stream: false,
 		Format: "json",
 	}
-	raw, err := o.sendRequest(payload)
+
+	// pass ctx down so gRPC cancel/timeout propagates
+	raw, err := o.sendRequest(ctx, payload)
 	if err != nil {
 		return nil, err
 	}
-
 	defer raw.Body.Close()
 
-	return streamOllamaResponse(raw)
+	return parseNonStreamOllamaResponse(raw)
 }
 
-func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
+func (o *OllamaAdapter) sendRequest(ctx context.Context, payload AIRequest) (*http.Response, error) {
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		log.Println("Error marshalling JSON:", err)
+		logger.Error().Err(err).Msg("Error marshalling JSON")
 		return nil, fmt.Errorf("internal error")
 	}
 
 	url := fmt.Sprintf("%s%s", o.baseURL, "/api/generate")
 	ollamaTimeout := 5 * time.Minute
 
-	ollamaCtx, ollamaCancel := context.WithTimeout(context.Background(), ollamaTimeout)
-	defer ollamaCancel()
+	// tie Ollama timeout to incoming ctx
+	ollamaCtx, cancel := context.WithTimeout(ctx, ollamaTimeout)
+	defer cancel()
 
-	req, err := http.NewRequestWithContext(ollamaCtx, "POST", url, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequestWithContext(ollamaCtx, http.MethodPost, url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return nil, err
 	}
@@ -77,12 +83,11 @@ func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
 
 	raw, err := o.httpClient.Do(req)
 	if err != nil {
-		log.Println("Error connecting to Ollama API:", err)
+		logger.Error().Err(err).Msg("Error connecting to Ollama API")
 		return nil, fmt.Errorf("ollama API connection error")
 	}
 
 	if raw.StatusCode != http.StatusOK {
-		// IMPORTANT: If status is not 200, we MUST close the body here.
 		defer raw.Body.Close()
 		body, _ := io.ReadAll(raw.Body)
 		return nil, fmt.Errorf("ollama API error: %d - %s", raw.StatusCode, string(body))
@@ -91,44 +96,58 @@ func (o *OllamaAdapter) sendRequest(payload AIRequest) (*http.Response, error) {
 	return raw, nil
 }
 
+func parseNonStreamOllamaResponse(resp *http.Response) (*domain.Transaction, error) {
+	// 1) decode Ollama's response object
+	var ollamaResp struct {
+		Model    string `json:"model"`
+		Response string `json:"response"`
+		Done     bool   `json:"done"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		logger.Error().Err(err).Msg("failed to decode ollama response json")
+		return nil, err
+	}
+
+	// 2) log raw text from Ollama (this is what you wanted)
+	logger.Info().
+		Str("model", ollamaResp.Model).
+		Str("full_response", ollamaResp.Response).
+		Msg("ollama full response")
+
+	if ollamaResp.Response == "" {
+		return nil, errors.New("ollama returned empty response")
+	}
+
+	// 3) parse the JSON string from `response` into your domain.Transaction
+	var finalJSON domain.Transaction
+	if err := json.Unmarshal([]byte(ollamaResp.Response), &finalJSON); err != nil {
+		logger.Error().
+			Err(err).
+			Str("raw_text", ollamaResp.Response).
+			Msg("failed to unmarshal transaction JSON from ollama")
+		return nil, err
+	}
+
+	return &finalJSON, nil
+}
+
 func buildPrompt(text string, categories []string) string {
 	prompt := fmt.Sprintf("Categories Available: %v\nOCR Text:\n%s", categories, text)
 	return prompt
 }
 
-func streamOllamaResponse(resp *http.Response) (*domain.Transaction, error) {
-	decoder := json.NewDecoder(resp.Body)
-	var fullText string
+func CleanOCR(raw string) string {
+	s := raw
 
-	for decoder.More() {
-		var chunk OllamaChunk
+	// collapse multiple newlines
+	s = regexp.MustCompile(`\n{2,}`).ReplaceAllString(s, "\n")
 
-		if err := decoder.Decode(&chunk); err != nil {
-			logger.Error().Err(err).Msg("error decoding ollama stream chunk")
-			break
-		}
+	// remove weird spacing
+	s = strings.TrimSpace(s)
 
-		fullText += chunk.Response
-		// (optional) log each chunk:
-		logger.Debug().Str("chunk", chunk.Response).Msg("ollama chunk")
-	}
+	// remove duplicated spaces
+	s = regexp.MustCompile(`\s{2,}`).ReplaceAllString(s, " ")
 
-	logger.Info().
-		Str("full_response", fullText).
-		Msg("ollama streamed response")
-
-	if fullText == "" {
-		return nil, errors.New("stream closed without receiving any response content")
-	}
-
-	// 4. Final processing: Parse the concatenated JSON string
-	var finalJSON domain.Transaction
-	if err := json.Unmarshal([]byte(fullText), &finalJSON); err != nil {
-		fmt.Printf("\nError parsing final JSON structure: %v\n", err)
-		fmt.Printf("Raw text received: %s\n", fullText)
-		return nil, err
-	}
-
-	fmt.Println("\n✅ Successfully Parsed Final JSON Object.")
-	return &finalJSON, nil
+	return s
 }
