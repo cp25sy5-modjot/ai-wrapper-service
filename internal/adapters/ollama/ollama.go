@@ -48,7 +48,6 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string,
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Ollama API response received: %v", raw.Body)
 
 	defer raw.Body.Close()
 
@@ -111,7 +110,7 @@ func streamOllamaResponse(resp *http.Response) (*domain.Transaction, error) {
 
 	// Concatenate the response text
 	fullResponseText += chunk.Response
-	fmt.Print(chunk.Response)
+	fmt.Print("response chunk: " + fullResponseText)
 
 	if fullResponseText == "" {
 		return nil, errors.New("stream closed without receiving any response content")
