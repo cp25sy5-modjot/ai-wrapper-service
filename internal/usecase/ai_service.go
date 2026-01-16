@@ -7,7 +7,7 @@ import (
 
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/domain"
 	"github.com/cp25sy5-modjot/ai-wrapper-service/internal/ports"
-	aiwpb "github.com/cp25sy5-modjot/proto/gen/ai/v1"
+	aiwpb "github.com/cp25sy5-modjot/proto/gen/ai/v2"
 )
 
 type AIService struct {
@@ -46,7 +46,7 @@ func (s *AIService) ExtractTextFromImage(ctx context.Context, req *aiwpb.Extract
 	return &aiwpb.ExtractTextResponse{ExtractedText: txt}, nil
 }
 
-func (s *AIService) BuildTransactionFromText(ctx context.Context, req *aiwpb.BuildTransactionFromTextRequest) (*aiwpb.TransactionResponse, error) {
+func (s *AIService) BuildTransactionFromText(ctx context.Context, req *aiwpb.BuildTransactionFromTextRequest) (*aiwpb.TransactionResponseV2, error) {
 	log.Printf("BuildTransactionFromText called")
 	text := strings.TrimSpace(req.GetTextToAnalyze())
 	if text == "" {
@@ -60,7 +60,7 @@ func (s *AIService) BuildTransactionFromText(ctx context.Context, req *aiwpb.Bui
 	return toPB(tr), nil
 }
 
-func (s *AIService) BuildTransactionFromImage(ctx context.Context, req *aiwpb.BuildTransactionFromImageRequest) (*aiwpb.TransactionResponse, error) {
+func (s *AIService) BuildTransactionFromImage(ctx context.Context, req *aiwpb.BuildTransactionFromImageRequest) (*aiwpb.TransactionResponseV2, error) {
 	log.Printf("BuildTransactionFromImage called")
 	if len(req.GetImageData()) == 0 {
 		return nil, invalidArg("image_data is empty")
@@ -80,14 +80,24 @@ func (s *AIService) BuildTransactionFromImage(ctx context.Context, req *aiwpb.Bu
 
 // ===== helpers =====
 
-func toPB(t *domain.Transaction) *aiwpb.TransactionResponse {
-	return &aiwpb.TransactionResponse{
-		Title:    t.Title,
-		Price:    t.Price,
-		Quantity: t.Quantity,
+func toPB(t *domain.Transaction) *aiwpb.TransactionResponseV2 {
+	return &aiwpb.TransactionResponseV2{
 		Date:     t.Date,
-		Category: t.Category,
+		Items:    buildTransactionItemsPB(t.Items),
 	}
+}
+
+func buildTransactionItemsPB(items []domain.TransactionItem) []*aiwpb.TransactionItem {
+	var pbItems []*aiwpb.TransactionItem
+	for _, item := range items {
+		pbItem := &aiwpb.TransactionItem{
+			Title:    item.Title,
+			Price:    item.Price,
+			Category: item.Category,
+		}
+		pbItems = append(pbItems, pbItem)
+	}
+	return pbItems
 }
 
 func invalidArg(msg string) error {
