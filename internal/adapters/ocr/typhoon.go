@@ -129,7 +129,7 @@ func parseOcrResponse(raw []byte) (string, error) {
 	}
 
 	text := resp.ExtractText()
-	log.Printf("OCR extracted text: %q", text)
+	// log.Printf("OCR extracted text: %q", text)
 	return text, nil
 }
 
