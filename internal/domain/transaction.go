@@ -1,6 +1,7 @@
 package domain
 
 type Transaction struct {
+	Title string            `json:"title"`
 	Date  string            `json:"date"` // normalized as YYYY-MM-DD
 	Items []TransactionItem `json:"items"`
 }

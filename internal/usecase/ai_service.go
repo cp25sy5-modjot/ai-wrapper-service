@@ -82,6 +82,7 @@ func (s *AIService) BuildTransactionFromImage(ctx context.Context, req *aiwpb.Bu
 
 func toPB(t *domain.Transaction) *aiwpb.TransactionResponseV2 {
 	return &aiwpb.TransactionResponseV2{
+		Title:    t.Title,
 		Date:     t.Date,
 		Items:    buildTransactionItemsPB(t.Items),
 	}

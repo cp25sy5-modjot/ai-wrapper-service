@@ -35,7 +35,7 @@ func NewOllamaAdapter() *OllamaAdapter {
 
 	return &OllamaAdapter{
 		baseURL:    baseURL,
-		modelName:  "modjot-ai",
+		modelName:  "modjot-ai-v2",
 		httpClient: &http.Client{},
 	}
 }
@@ -149,5 +149,6 @@ func CleanOCR(raw string) string {
 	// remove duplicated spaces
 	s = regexp.MustCompile(`\s{2,}`).ReplaceAllString(s, " ")
 
+	// log.Printf("Cleaned OCR text: %q", s)
 	return s
 }

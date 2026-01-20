@@ -3,7 +3,7 @@ module github.com/cp25sy5-modjot/ai-wrapper-service
 go 1.24.6
 
 require (
-	github.com/cp25sy5-modjot/proto v1.1.0
+	github.com/cp25sy5-modjot/proto v1.2.0
 	github.com/rs/zerolog v1.34.0
 	google.golang.org/grpc v1.67.1
 )

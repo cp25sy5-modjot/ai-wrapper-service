@@ -1,6 +1,6 @@
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
-github.com/cp25sy5-modjot/proto v1.1.0 h1:ZiJTEGsrhReukU+JL2605cf8nGC+a45okVp/oyUjEXE=
-github.com/cp25sy5-modjot/proto v1.1.0/go.mod h1:Z+Cri+nfClVdXQrj0kkdwdBPZCixAWrZvesraLqx40M=
+github.com/cp25sy5-modjot/proto v1.2.0 h1:GelVvmNOzyuAc4pLu2jQAvWCLTZhnl4yEeZxaV1QM7k=
+github.com/cp25sy5-modjot/proto v1.2.0/go.mod h1:Z+Cri+nfClVdXQrj0kkdwdBPZCixAWrZvesraLqx40M=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
