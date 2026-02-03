@@ -49,6 +49,9 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string,
 		Prompt: prompt,
 		Stream: false,
 		Format: "json",
+		Options: &AIOptions{
+			NumPredict: 4096,
+		},
 	}
 
 	// pass ctx down so gRPC cancel/timeout propagates
@@ -133,7 +136,12 @@ func parseNonStreamOllamaResponse(resp *http.Response) (*domain.Transaction, err
 }
 
 func buildPrompt(text string, categories []string) string {
-	prompt := fmt.Sprintf("Categories Available: %v\nOCR Text:\n%s", categories, text)
+	prompt := fmt.Sprintf(
+		"Return only minified JSON in one line. No comments. No markdown. "+
+			"Categories Available: %v\nOCR Text:\n%s",
+		categories,
+		text,
+	)
 	return prompt
 }
 
