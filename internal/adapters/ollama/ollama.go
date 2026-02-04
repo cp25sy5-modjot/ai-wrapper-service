@@ -22,7 +22,6 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
 type OllamaAdapter struct {
 	baseURL    string
-	modelName  string
 	httpClient *http.Client
 }
 
@@ -35,24 +34,12 @@ func NewOllamaAdapter() *OllamaAdapter {
 
 	return &OllamaAdapter{
 		baseURL:    baseURL,
-		modelName:  "modjot-ai-v2",
 		httpClient: &http.Client{},
 	}
 }
 func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string, categories []string) (*domain.Transaction, error) {
-	cleanOcr := CleanOCR(text)
-	prompt := buildPrompt(cleanOcr, categories)
-	log.Printf("Ollama Prompt: %s", prompt)
-
-	payload := AIRequest{
-		Model:  o.modelName,
-		Prompt: prompt,
-		Stream: false,
-		Format: "json",
-		Options: &AIOptions{
-			NumPredict: 4096,
-		},
-	}
+	preOCR := PreprocessOCR(text)
+	payload := buildAIRequest(preOCR, categories)
 
 	// pass ctx down so gRPC cancel/timeout propagates
 	raw, err := o.sendRequest(ctx, payload)
@@ -135,28 +122,105 @@ func parseNonStreamOllamaResponse(resp *http.Response) (*domain.Transaction, err
 	return &finalJSON, nil
 }
 
-func buildPrompt(text string, categories []string) string {
+func buildAIRequest(ocrText string, categories []string) AIRequest {
 	prompt := fmt.Sprintf(
-		"Return only minified JSON in one line. No comments. No markdown. "+
-			"Categories Available: %v\nOCR Text:\n%s",
+		`Return only minified JSON in one line. No comments. No markdown.
+
+CRITICAL RULES:
+- Categories MUST be exactly one of: %v. Never invent new categories.
+- Only real purchased products may appear in items[].
+- NEVER include store name, branch, receipt header, tax id, POS id, totals, VAT, CASH, Change, discount lines, or thank-you text.
+- Any token where numbers touch letters (example: "470X", "3S") is a PRODUCT CODE, NOT a price.
+- A price MUST be a standalone decimal number at the END of a product line.
+- Lines containing quantity/unit patterns such as "@", "PCS", "หน่วย" are NOT products.
+- Any line starting with a number followed by "@" is NEVER a product.
+- Quantity/unit lines belong to the previous product and must be merged into that product.
+- Never output an item whose title starts with a number.
+- Remove prefixes like "1P", "2P", "A#", "P#", "A ", "P ".
+- Titles must be short product names only.
+
+OUTPUT JSON SCHEMA:
+{"title":string,"date":string,"items":[{"title":string,"price":number,"category":string}]}
+
+OCR TEXT:
+%s`,
 		categories,
-		text,
+		ocrText,
 	)
-	return prompt
+
+	return AIRequest{
+		Model:  "modjot-ai-v2",
+		Prompt: prompt,
+		Stream: false,
+		Format: "json",
+		Options: &AIOptions{
+			NumPredict:  4096,
+			Temperature: 0,
+		},
+	}
 }
+
 
 func CleanOCR(raw string) string {
 	s := raw
 
+	// remove ASCII table chars
+	s = regexp.MustCompile(`[|]+`).ReplaceAllString(s, " ")
+	s = regexp.MustCompile(`[-_=]{2,}`).ReplaceAllString(s, " ")
+
+	// remove unicode box drawing
+	s = regexp.MustCompile(`[│─┼┌┐└┘╔╗╚╝═]+`).ReplaceAllString(s, " ")
+
 	// collapse multiple newlines
 	s = regexp.MustCompile(`\n{2,}`).ReplaceAllString(s, "\n")
 
-	// remove weird spacing
 	s = strings.TrimSpace(s)
 
-	// remove duplicated spaces
+	// normalize spaces
 	s = regexp.MustCompile(`\s{2,}`).ReplaceAllString(s, " ")
 
-	// log.Printf("Cleaned OCR text: %q", s)
+	return s
+}
+
+func MergeQtyLines(s string) string {
+	lines := strings.Split(s, "\n")
+
+	qtyRe := regexp.MustCompile(`^\s*\d+(\.\d+)?@\s*\d+(\.\d+)?`)
+
+	var out []string
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+
+		if qtyRe.MatchString(line) && len(out) > 0 {
+			out[len(out)-1] = out[len(out)-1] + " " + line
+			continue
+		}
+
+		out = append(out, line)
+	}
+
+	return strings.Join(out, "\n")
+}
+
+func FixThaiOCR(s string) string {
+	for bad, good := range thaiFix {
+		s = strings.ReplaceAll(s, bad, good)
+	}
+	return s
+}
+
+func NormalizeNumbers(s string) string {
+	// remove spaces inside numbers: 1,     000 -> 1,000
+	re := regexp.MustCompile(`(\d)[,\s]+(\d{3})`)
+	return re.ReplaceAllString(s, `$1$2`)
+}
+
+func PreprocessOCR(raw string) string {
+	s := CleanOCR(raw)
+	s = NormalizeNumbers(s)
+	s = MergeQtyLines(s)
+	s = FixThaiOCR(s)
+
 	return s
 }

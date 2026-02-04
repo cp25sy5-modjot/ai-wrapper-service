@@ -10,5 +10,5 @@ type AIRequest struct {
 
 type AIOptions struct {
 	NumPredict int `json:"num_predict,omitempty"`
-	// Temperature float64 `json:"temperature,omitempty"`
+	Temperature float64 `json:"temperature,omitempty"`
 }
