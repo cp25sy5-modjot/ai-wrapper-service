@@ -135,9 +135,13 @@ CRITICAL RULES:
 - Lines containing quantity/unit patterns such as "@", "PCS", "หน่วย" are NOT products.
 - Any line starting with a number followed by "@" is NEVER a product.
 - Quantity/unit lines belong to the previous product and must be merged into that product.
-- Never output an item whose title starts with a number.
+- Prefer including uncertain items rather than dropping them unless clearly a header/total.
 - Remove prefixes like "1P", "2P", "A#", "P#", "A ", "P ".
 - Titles must be short product names only.
+- date MUST be ISO-8601. Include time if present: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS(+TZ)
+- If a line appears to be a product but is messy OCR, still include it.
+- Only drop lines that are clearly totals, VAT, CASH, Change, receipt numbers, or discounts.
+- If price is unclear, infer from nearest decimal number.
 
 OUTPUT JSON SCHEMA:
 {"title":string,"date":string,"items":[{"title":string,"price":number,"category":string}]}
@@ -149,7 +153,7 @@ OCR TEXT:
 	)
 
 	return AIRequest{
-		Model:  "modjot-ai-v2",
+		Model:  "modjot-ai-v4",
 		Prompt: prompt,
 		Stream: false,
 		Format: "json",
