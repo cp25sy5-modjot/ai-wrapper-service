@@ -2,7 +2,7 @@ package domain
 
 type Transaction struct {
 	Title string            `json:"title"`
-	Date  string            `json:"date"` // normalized as YYYY-MM-DD
+	Date  string            `json:"date"` // normalized as YYYY-MM-DDTHH:MM:SS(+TZ)
 	Items []TransactionItem `json:"items"`
 }
 
