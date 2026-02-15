@@ -164,7 +164,6 @@ OCR TEXT:
 	}
 }
 
-
 func CleanOCR(raw string) string {
 	s := raw
 
@@ -221,10 +220,11 @@ func NormalizeNumbers(s string) string {
 }
 
 func PreprocessOCR(raw string) string {
+	logger.Info().Str("raw_ocr", raw).Msg("raw OCR text")
 	s := CleanOCR(raw)
 	s = NormalizeNumbers(s)
 	s = MergeQtyLines(s)
 	s = FixThaiOCR(s)
-
+	logger.Info().Str("preprocessed_ocr", s).Msg("preprocessed OCR text")
 	return s
 }
