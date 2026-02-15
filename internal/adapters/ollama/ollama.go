@@ -38,6 +38,9 @@ func NewOllamaAdapter() *OllamaAdapter {
 	}
 }
 func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string, categories []string) (*domain.Transaction, error) {
+	if text == "" {
+		return nil, errors.New("empty OCR text")
+	}
 	preOCR := PreprocessOCR(text)
 	payload := buildAIRequest(preOCR, categories)
 
