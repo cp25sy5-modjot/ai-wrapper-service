@@ -122,6 +122,12 @@ func parseNonStreamOllamaResponse(resp *http.Response) (*domain.Transaction, err
 		return nil, err
 	}
 
+	for i := range finalJSON.Items {
+		if finalJSON.Items[i].Category == "" {
+			finalJSON.Items[i].Category = "อื่นๆ"
+		}
+	}
+
 	return &finalJSON, nil
 }
 
@@ -131,6 +137,10 @@ func buildAIRequest(ocrText string, categories []string) AIRequest {
 
 CRITICAL RULES:
 - Categories MUST be exactly one of: %v. Never invent new categories.
+- category is REQUIRED for every item.
+- NEVER omit category.
+- If unsure, use the closest match from the categories list.
+- Every item MUST contain all three fields: title, price, category.
 - Only real purchased products may appear in items[].
 - NEVER include store name, branch, receipt header, tax id, POS id, totals, VAT, CASH, Change, discount lines, or thank-you text.
 - Any token where numbers touch letters (example: "470X", "3S") is a PRODUCT CODE, NOT a price.
@@ -224,10 +234,24 @@ func NormalizeNumbers(s string) string {
 
 func PreprocessOCR(raw string) string {
 	logger.Info().Str("raw_ocr", raw).Msg("raw OCR text")
+
 	s := CleanOCR(raw)
+
+	// 1. แก้เลขก่อน เพราะมีผลต่อ parsing ทั้งหมด
 	s = NormalizeNumbers(s)
+	s = SplitMergedPrices(s)
+
+	// 2. จัดโครงสร้างบรรทัด
 	s = MergeQtyLines(s)
+
+	// 3. แก้คำ OCR ไทย
 	s = FixThaiOCR(s)
+
 	logger.Info().Str("preprocessed_ocr", s).Msg("preprocessed OCR text")
 	return s
+}
+
+func SplitMergedPrices(s string) string {
+	re := regexp.MustCompile(`(\d+\.\d{2})(\d+\.\d{2})`)
+	return re.ReplaceAllString(s, `$1 $2`)
 }
