@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,7 +12,14 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 )
+
+type RateLimitError struct{ Msg string }
+func (e RateLimitError) Error() string { return e.Msg }
+
+type ServerError struct{ Msg string }
+func (e ServerError) Error() string { return e.Msg }
 
 type TyphoonOCR struct {
 	apiKey     string
@@ -27,9 +35,16 @@ func NewTyphoonOCR() *TyphoonOCR {
 	}
 
 	return &TyphoonOCR{
-		apiKey:     apiKey,
-		baseURL:    "https://api.opentyphoon.ai/v1/ocr",
-		httpClient: &http.Client{},
+		apiKey:  apiKey,
+		baseURL: "https://api.opentyphoon.ai/v1/ocr",
+		httpClient: &http.Client{
+			Timeout: 60 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 20,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 		defaultOcr: OcrParams{
 			Model:             "typhoon-ocr",
 			TaskType:          "default",
@@ -37,36 +52,51 @@ func NewTyphoonOCR() *TyphoonOCR {
 			Temperature:       0.1,
 			TopP:              0.6,
 			RepetitionPenalty: 1.2,
-			Pages:             nil, // all pages by default
 		},
 	}
 }
 
 func (t *TyphoonOCR) ExtractText(ctx context.Context, img []byte) (string, error) {
-	body, writer, err := buildMultipartRequest(img, t.defaultOcr)
-	if err != nil {
-		return "", err
+
+	backoffs := []time.Duration{
+		2 * time.Second,
+		5 * time.Second,
+		30 * time.Second,
 	}
 
-	raw, err := t.sendOcrRequest(ctx, body, writer)
-	if err != nil {
-		return "", err
+	for attempt := 0; attempt <= len(backoffs); attempt++ {
+
+		body, writer, err := buildMultipartRequest(img, t.defaultOcr)
+		if err != nil {
+			return "", err
+		}
+
+		raw, err := t.sendOcrRequest(ctx, body, writer)
+		if err == nil {
+			return parseOcrResponse(raw)
+		}
+
+		if attempt == len(backoffs) {
+			return "", err
+		}
+
+		switch err.(type) {
+		case RateLimitError, ServerError:
+			wait := backoffs[attempt]
+			log.Printf("OCR retry %d in %v", attempt+1, wait)
+
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+
+		default:
+			return "", err
+		}
 	}
 
-	return parseOcrResponse(raw)
-}
-
-func (t *TyphoonOCR) ExtractTextWithParams(ctx context.Context, img []byte, params OcrParams) (string, error) {
-	body, writer, err := buildMultipartRequest(img, params)
-	if err != nil {
-		return "", err
-	}
-
-	raw, err := t.sendOcrRequest(ctx, body, writer)
-	if err != nil {
-		return "", err
-	}
-	return parseOcrResponse(raw)
+	return "", errors.New("unreachable")
 }
 
 func buildMultipartRequest(image []byte, params OcrParams) (*bytes.Buffer, *multipart.Writer, error) {
@@ -78,12 +108,10 @@ func buildMultipartRequest(image []byte, params OcrParams) (*bytes.Buffer, *mult
 		return nil, nil, err
 	}
 
-	_, err = io.Copy(part, bytes.NewReader(image))
-	if err != nil {
+	if _, err = io.Copy(part, bytes.NewReader(image)); err != nil {
 		return nil, nil, err
 	}
 
-	// Fields
 	_ = writer.WriteField("task_type", params.TaskType)
 	_ = writer.WriteField("max_tokens", strconv.Itoa(params.MaxTokens))
 	_ = writer.WriteField("temperature", strconv.FormatFloat(params.Temperature, 'f', -1, 64))
@@ -100,6 +128,7 @@ func buildMultipartRequest(image []byte, params OcrParams) (*bytes.Buffer, *mult
 }
 
 func (t *TyphoonOCR) sendOcrRequest(ctx context.Context, body *bytes.Buffer, writer *multipart.Writer) ([]byte, error) {
+
 	req, err := http.NewRequestWithContext(ctx, "POST", t.baseURL, body)
 	if err != nil {
 		return nil, err
@@ -114,12 +143,23 @@ func (t *TyphoonOCR) sendOcrRequest(ctx context.Context, body *bytes.Buffer, wri
 	}
 	defer resp.Body.Close()
 
+	raw, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("OCR API error: %d - %s", resp.StatusCode, string(raw))
+
+		switch resp.StatusCode {
+		case 429:
+			return nil, RateLimitError{string(raw)}
+
+		case 500, 502, 503, 504:
+			return nil, ServerError{string(raw)}
+
+		default:
+			return nil, fmt.Errorf("OCR API error: %d - %s", resp.StatusCode, string(raw))
+		}
 	}
 
-	return io.ReadAll(resp.Body)
+	return raw, nil
 }
 
 func parseOcrResponse(raw []byte) (string, error) {
@@ -128,9 +168,7 @@ func parseOcrResponse(raw []byte) (string, error) {
 		return "", fmt.Errorf("failed to unmarshal OCR response: %w", err)
 	}
 
-	text := resp.ExtractText()
-	// log.Printf("OCR extracted text: %q", text)
-	return text, nil
+	return resp.ExtractText(), nil
 }
 
 func (r *OcrResponse) ExtractTextWithNaturalText() string {
