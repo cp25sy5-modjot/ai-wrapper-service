@@ -44,6 +44,8 @@ func (o *OllamaAdapter) ParseOcrResponseToJson(ctx context.Context, text string,
 	preOCR := PreprocessOCR(text)
 	payload := buildAIRequest(preOCR, categories)
 
+	logger.Info().Str("prompt", payload.Prompt).Msg("full prompt")
+
 	// pass ctx down so gRPC cancel/timeout propagates
 	raw, err := o.sendRequest(ctx, payload)
 	if err != nil {
@@ -247,7 +249,6 @@ func PreprocessOCR(raw string) string {
 	// 3. แก้คำ OCR ไทย
 	s = FixThaiOCR(s)
 
-	logger.Info().Str("preprocessed_ocr", s).Msg("preprocessed OCR text")
 	return s
 }
 
